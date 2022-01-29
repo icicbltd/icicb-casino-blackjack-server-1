@@ -101,7 +101,12 @@ const getDealerCards = async (e) => {
             }
         }
     }
-    winCheck(e);
+    await winCheck(e);
+    try {
+        await sendPlatForm(e);
+    } catch {
+        throw new Error(1);
+    }
 }
 
 const getPlayerCards = async (e) => {
@@ -132,6 +137,7 @@ const getPlayerCards = async (e) => {
             e.Dealer.d_Weight += e.Dealer.Weights[1];
             if (e.Dealer.d_Weight == 21) {
                 e.insuranceMoney = e.in_money;
+                console.log("insurance:" + e.insuranceMoney, e.in_money);
                 await axios.post(
                     process.env.PLATFORM_SERVER + "api/games/winlose",
                     {
@@ -143,14 +149,14 @@ const getPlayerCards = async (e) => {
             }
         }
     }
-    winCheck(e);
+    await winCheck(e);
     try {
-        sendPlatForm(e);
+        await sendPlatForm(e);
     } catch {
         throw new Error(1);
     }
 }
-const getSplitCards = (e) => {
+const getSplitCards = async (e) => {
     e.Split.Cards[e.Split.cardCount] = e.AllCards.Cards[e.AllCards.cardCount];
     e.Split.Weights[e.Split.cardCount] = e.AllCards.Weights[e.AllCards.cardCount];
     e.Split.s_Weight += e.AllCards.Weights[e.AllCards.cardCount];
@@ -169,7 +175,7 @@ const getSplitCards = (e) => {
         e.s_winState = 3;
         e.Split.State = false;
     }
-    winCheck(e);
+    await winCheck(e);
 }
 
 const winCheck = (e) => {
@@ -200,6 +206,7 @@ const winCheck = (e) => {
 }
 
 const sendPlatForm = async (e) => {
+    console.log("platform:" + e.winMoney);
     await axios.post(
         process.env.PLATFORM_SERVER + "api/games/winlose",
         {
@@ -217,6 +224,8 @@ const gameButtons = (e) => {
     e.buttonStatus.doubleButton = false;
     e.buttonStatus.dealButton = true;
     e.buttonStatus.insuranceButton = false;
+    e.buttonStatus.oneButton = false;
+    e.buttonStatus.twoButton = false;
 }
 
 const sendFront = (res, user) => {
@@ -240,11 +249,14 @@ const sendFront = (res, user) => {
         winState: user.winState,
         s_winState: user.s_winState,
         winMoney: user.winMoney,
-        insuranceMoney: user.insuranceMoney
+        insuranceMoney: user.insuranceMoney,
+        oneImage: user.buttonStatus.oneButton,
+        twoImage: user.buttonStatus.twoButton,
     });
 }
 
 const betSend = async (e) => {
+    console.log("betsend:" + e.betAmount);
     await axios.post(
         process.env.PLATFORM_SERVER + "api/games/bet",
         {
@@ -264,6 +276,7 @@ const defaultButton = (e) => {
 
 module.exports = {
     StartGame: async (req, res) => {
+        console.log(1);
         try {
             const { token, betValue } = req.body;
             userPoints[token] = {
@@ -302,7 +315,10 @@ module.exports = {
                     doubleButton: true,
                     dealButton: false,
                     insuranceButton: false,
+                    oneButton: false,
+                    twoButton: false,
                 },
+                forfietButton: true,
                 insurance: false,
                 winMoney: 0,
                 hit_ClickEvent: true,
@@ -312,13 +328,12 @@ module.exports = {
                 insuranceMoney: 0
             }
             let user = userPoints[token];
-            // try {
-            //     betSend(user);
-            // } catch {
-            //     throw new Error(2);
-            // }
+            try {
+                betSend(user);
+            } catch {
+                throw new Error(2);
+            }
             await CardDeploy(user);
-            console.log(user);
             for (var i = 0; i < 2; i++) {
                 user.Player.Cards[i] = user.AllCards.Cards[i];
                 user.Player.Weights[i] = user.AllCards.Weights[i];
@@ -343,9 +358,8 @@ module.exports = {
                 user.buttonStatus.splitButton = true;
             } else if (user.Player.p_Weight == 21) {
                 user.winState = 3;
-                user.winMoney = user.betAmount * 2;
-                gameButtons(user);
-                gameButtons(user);
+                user.winMoney = user.betAmount * 2.5;
+                await gameButtons(user);
                 try {
                     await sendPlatForm(user);
                 } catch {
@@ -353,7 +367,6 @@ module.exports = {
                 }
 
             }
-
             sendFront(res, user);
         } catch (err) {
             res.json({
@@ -373,18 +386,25 @@ module.exports = {
                     user.hit_ClickEvent = true;
                 }
                 if (user.hit_ClickEvent && user.Player.State) {
-                    getPlayerCards(user);
+                    await getPlayerCards(user);
                     user.hit_ClickEvent = false;
                 } else if (!user.hit_ClickEvent && user.Split.State) {
-                    getSplitCards(user);
+                    await getSplitCards(user);
                     user.hit_ClickEvent = true;
+                }
+                if (!user.Player.State) {
+                    user.buttonStatus.oneButton = false;
+                    user.buttonStatus.twoButton = true;
+                } else if (!user.Split.State) {
+                    user.buttonStatus.oneButton = true;
+                    user.buttonStatus.twoButton = false;
                 }
                 if (!user.Player.State && !user.Split.State) {
                     if (user.Player.State != 3 || user.Split.State != 3)
-                        getDealerCards(user);
+                        await getDealerCards(user);
                 }
             } else {
-                getPlayerCards(user);
+                await getPlayerCards(user);
             }
         }
         sendFront(res, user);
@@ -403,15 +423,17 @@ module.exports = {
                 if (user.hit_ClickEvent && user.Player.State) {
                     user.Player.State = false;
                     user.hit_ClickEvent = false;
+
                 } else if (!user.hit_ClickEvent && user.Split.State) {
                     user.Split.State = false;
                     user.hit_ClickEvent = true;
+
                 }
                 if (!user.Player.State && !user.Split.State) {
-                    getDealerCards(user);
+                    await getDealerCards(user);
                 }
             } else {
-                getDealerCards(user);
+                await getDealerCards(user);
             }
         }
         sendFront(res, user);
@@ -420,12 +442,12 @@ module.exports = {
         const { token } = req.body;
         let user = userPoints[token];
         if (user.buttonStatus.doubleButton) {
-            gameButtons(user);
-            // betSend(user);
+            await gameButtons(user);
+            await betSend(user);
             user.betAmount = user.betAmount * 2;
-            getPlayerCards(user);
+            await getPlayerCards(user);
             if (user.winState == 0) {
-                getDealerCards(user);
+                await getDealerCards(user);
             }
         }
         sendFront(res, user);
@@ -446,6 +468,7 @@ module.exports = {
             user.Player.cardCount--;
             user.buttonStatus.splitButton = false;
             user.betAmount = user.betAmount / 2;
+            user.buttonStatus.oneButton = true;
         }
         sendFront(res, user);
     },
@@ -455,16 +478,30 @@ module.exports = {
         if (user.buttonStatus.insuranceButton) {
             user.in_money = user.betAmount / 2;
             user.insurance = true;
-            await axios.post(
-                process.env.PLATFORM_SERVER + "api/games/bet",
-                {
-                    token: user.token,
-                    amount: user.in_money,
-                }
-            );
+            try {
+                await axios.post(
+                    process.env.PLATFORM_SERVER + "api/games/bet",
+                    {
+                        token: user.token,
+                        amount: user.in_money,
+                    }
+                );
+            } catch {
+                throw new Error(2);
+            }
         }
         user.buttonStatus.insuranceButton = false;
 
+        sendFront(res, user);
+    },
+    Forfiet: async (req, res) => {
+        const { token } = req.body;
+        let user = userPoints[token];
+        if (user.forfietButton) {
+            user.winMoney = user.betAmount / 2;
+            await sendPlatForm(user);
+            user.forfietButton = false;
+        }
         sendFront(res, user);
     }
 };

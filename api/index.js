@@ -10,4 +10,5 @@ module.exports = (router) => {
     router.post("/Split", User.Split);
     router.post("/Double", User.Double);
     router.post("/Insurance", User.Insurance);
+    router.post("/Forfiet", User.Forfiet);
 };
